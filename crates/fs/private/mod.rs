@@ -1,5 +1,5 @@
 mod hamt;
-mod namefilter;
+mod directory;
 
 pub use hamt::*;
-pub use namefilter::*;
+pub use directory::*;
