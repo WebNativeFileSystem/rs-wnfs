@@ -82,7 +82,13 @@ impl<const N: usize, const K: usize> BloomFilter<N, K> {
     where
         T: AsRef<[u8]>,
     {
-        self.hash_indices(item).all(|i| self.bits[i])
+        for i in self.hash_indices(item) {
+            if !self.bits[i] {
+                return false;
+            }
+        }
+
+        true
     }
 
     /// Counts the number of bits set in the bloom filter.
@@ -132,19 +138,29 @@ mod bloomfilter_tests {
     use super::*;
 
     #[test]
+    fn bloom_filter_has_the_right_bit_index_count() {
+        macro_rules! assert_bloom_bit_index_count {
+            ($( ( $N:expr, $K:expr ) ),* ) => {
+                $(
+                    let mut bloom_filter = BloomFilter::<$N, $K>::new();
+                    bloom_filter.add(b"Item");
+                    assert_eq!(bloom_filter.count_ones(), $K);
+                )*
+            };
+        }
+
+        assert_bloom_bit_index_count![(256, 30), (512, 60), (1024, 20), (128, 10), (64, 4)];
+    }
+
+    #[test]
     fn bloom_filter_can_add_and_validate_item_existence() {
         let mut bloom = BloomFilter::<256, 30>::new();
-        let items: Vec<String> = vec!["first".into(), "second".into(), "third".into()];
-        items.iter().for_each(|item| {
-            bloom.add(item);
-        });
+        bloom.add(b"first");
+        bloom.add(b"second");
+        bloom.add(b"third");
 
-        items.iter().for_each(|item| {
-            assert!(bloom.contains(item));
-        });
-
-        assert!(!bloom.contains(b"irst"));
-        assert!(!bloom.contains(b"secnd"));
+        assert!(bloom.contains(b"first"));
+        assert!(bloom.contains(b"second"));
         assert!(!bloom.contains(b"tird"));
     }
 
