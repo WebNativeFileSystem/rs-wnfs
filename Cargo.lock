@@ -1932,6 +1932,7 @@ dependencies = [
  "futures",
  "futures-util",
  "hashbrown 0.12.1",
+ "lazy_static",
  "libipld",
  "log",
  "multihash",

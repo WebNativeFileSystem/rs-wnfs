@@ -12,7 +12,7 @@ use serde::{
 
 use crate::{error, AsyncSerialize, BlockStore, Link};
 
-use super::{error::HamtError, hash::Hasher, Node, HAMT_VALUES_BUCKET_SIZE};
+use super::{hash::Hasher, Node};
 
 //--------------------------------------------------------------------------------------------------
 // Type Definitions
@@ -38,51 +38,12 @@ where
 //--------------------------------------------------------------------------------------------------
 
 impl<K, V> Pair<K, V> {
-    /// Create a new `Pair` from a key and value.
     pub fn new(key: K, value: V) -> Self {
         Self { key, value }
     }
 }
 
 impl<K, V, H: Hasher> Pointer<K, V, H> {
-    /// Converts a Link pointer to a canonical form to ensure consistent tree representation after deletes.
-    pub async fn canonicalize<B: BlockStore>(self, store: &B) -> Result<Option<Self>>
-    where
-        K: DeserializeOwned + PartialOrd + Clone,
-        V: DeserializeOwned + Clone,
-        H: Clone,
-    {
-        match self {
-            Pointer::Link(link) => {
-                let node = link.get_owned_value(store).await?;
-                match node.pointers.len() {
-                    0 => Ok(None),
-                    1 if matches!(node.pointers[0], Pointer::Values(_)) => {
-                        Ok(Some(node.pointers[0].clone()))
-                    }
-                    2..=HAMT_VALUES_BUCKET_SIZE if matches!(node.count_values(), Ok(_)) => {
-                        // Collect all the values of the node.
-                        let mut values = node
-                            .pointers
-                            .iter()
-                            .filter_map(|p| match p {
-                                Pointer::Values(values) => Some(values.clone()),
-                                _ => None,
-                            })
-                            .flatten()
-                            .collect::<Vec<_>>();
-
-                        values.sort_unstable_by(|a, b| a.key.partial_cmp(&b.key).unwrap());
-
-                        Ok(Some(Pointer::Values(values)))
-                    }
-                    _ => Ok(Some(Pointer::Link(Link::from(node)))),
-                }
-            }
-            _ => error(HamtError::NonCanonicalizablePointer),
-        }
-    }
-
     /// Converts a Pointer to an IPLD object.
     pub async fn to_ipld<B: BlockStore + ?Sized>(&self, store: &mut B) -> Result<Ipld>
     where

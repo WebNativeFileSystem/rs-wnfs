@@ -1,7 +1,9 @@
 use std::{fmt::Debug, marker::PhantomData, rc::Rc};
 
+use std::{fmt::Debug, marker::PhantomData, rc::Rc};
+
 use crate::{private::HAMT_VALUES_BUCKET_SIZE, AsyncSerialize, BlockStore, Link};
-use anyhow::{bail, Result};
+use anyhow::Result;
 use async_recursion::async_recursion;
 use async_trait::async_trait;
 use bitvec::array::BitArray;
@@ -16,7 +18,6 @@ use serde::{
 use sha3::Sha3_256;
 
 use super::{
-    error::HamtError,
     hash::{HashNibbles, Hasher},
     Pair, Pointer, HAMT_BITMASK_BIT_SIZE, HAMT_BITMASK_BYTE_SIZE,
 };
@@ -43,7 +44,7 @@ where
 
 impl<K, V, H> Node<K, V, H>
 where
-    K: DeserializeOwned + Serialize + AsRef<[u8]> + Clone + Eq + PartialOrd + Debug,
+    K: DeserializeOwned + Serialize + AsRef<[u8]> + Clone + Eq + Debug,
     V: DeserializeOwned + Serialize + Clone + Debug,
     H: Hasher + Clone + Debug,
 {
@@ -54,7 +55,7 @@ where
         value: V,
         store: &mut B,
     ) -> Result<Rc<Self>> {
-        let hash = &Sha3_256::generate_hash(&key);
+        let hash = &H::hash(&key);
         debug!("set: hash = {:02x?}", hash);
         self.modify_value(&mut HashNibbles::new(hash), key, value, store)
             .await
@@ -66,7 +67,7 @@ where
         key: &K,
         store: &B,
     ) -> Result<Option<&'a V>> {
-        let hash = &Sha3_256::generate_hash(key);
+        let hash = &H::hash(key);
         debug!("get: hash = {:02x?}", hash);
         Ok(self
             .get_value(&mut HashNibbles::new(hash), key, store)
@@ -80,7 +81,7 @@ where
         key: &K,
         store: &B,
     ) -> Result<(Rc<Self>, Option<V>)> {
-        let hash = &Sha3_256::generate_hash(key);
+        let hash = &H::hash(key);
         debug!("remove: hash = {:02x?}", hash);
         self.remove_value(&mut HashNibbles::new(hash), key, store)
             .await
@@ -94,8 +95,8 @@ where
 
     /// Calculates the value index from the bitmask index.
     pub(super) fn get_value_index(&self, bit_index: usize) -> usize {
-        let shift_amount = HAMT_BITMASK_SIZE - bit_index;
-        let mask = if shift_amount < HAMT_BITMASK_SIZE {
+        let shift_amount = HAMT_BITMASK_BIT_SIZE - bit_index;
+        let mask = if shift_amount < HAMT_BITMASK_BIT_SIZE {
             let mut tmp = BitArray::<BitMaskType>::new([0xff, 0xff]);
             tmp.shift_left(shift_amount);
             tmp
@@ -114,16 +115,23 @@ where
         value: V,
         store: &B,
     ) -> Result<Rc<Self>> {
-        let bit_index = hashnibbles.next()? as usize;
-        debug!("modify_value: bit_index = {}", bit_index);
+        let bit_index = hashnibbles.try_next()?;
         let value_index = self.get_value_index(bit_index);
+
+        debug!(
+            "modify_value: bit_index = {}, value_index = {}",
+            bit_index, value_index
+        );
 
         // If the bit is not set yet, insert a new pointer.
         if !self.bitmask[bit_index] {
             let mut node = (**self).clone();
+
             node.pointers
                 .insert(value_index, Pointer::Values(vec![Pair { key, value }]));
+
             node.bitmask.set(bit_index, true);
+
             return Ok(Rc::new(node));
         }
 
@@ -131,15 +139,35 @@ where
         Ok(match &self.pointers[value_index] {
             Pointer::Values(values) => {
                 let mut node = (**self).clone();
-                let mut values = (*values).clone();
+                let pointers = {
+                    let mut values = (*values).clone();
+                    if let Some(i) = values.iter().position(|p| p.key == key) {
+                        // If the key is already present, update the value.
+                        values[i] = Pair::new(key, value);
+                        Pointer::<_, _, H>::Values(values)
+                    } else {
+                        // Otherwise, insert the new value.
+                        values.insert(value_index, Pair::new(key, value));
+                        if values.len() > HAMT_VALUES_BUCKET_SIZE {
+                            // If values has reached threshold, we need to create a link that splits it.
+                            let mut sub_node = Rc::new(Node::<K, V, H>::default());
+                            let cursor = hashnibbles.get_cursor();
+                            for value in values.into_iter() {
+                                let hash = &H::hash(&value.key);
+                                let hashnibbles = &mut HashNibbles::with_cursor(hash, cursor);
 
-                if let Some(i) = values.iter().position(|p| p.key == key) {
-                    values[i] = Pair { key, value };
-                } else {
-                    values.insert(value_index, Pair { key, value });
-                }
+                                sub_node = sub_node
+                                    .modify_value(hashnibbles, value.key, value.value, store)
+                                    .await?;
+                            }
+                            Pointer::<_, _, H>::Link(Link::from(sub_node))
+                        } else {
+                            Pointer::<_, _, H>::Values(values)
+                        }
+                    }
+                };
 
-                node.pointers[value_index] = Pointer::Values(values);
+                node.pointers[value_index] = pointers;
                 Rc::new(node)
             }
             Pointer::Link(link) => {
@@ -184,7 +212,7 @@ where
         key: &K,
         store: &B,
     ) -> Result<(Rc<Self>, Option<Pair<K, V>>)> {
-        let bit_index = hashnibbles.next()? as usize;
+        let bit_index = hashnibbles.try_next()?;
 
         // If the bit is not set yet, return None.
         if !self.bitmask[bit_index] {
@@ -196,12 +224,26 @@ where
         Ok(match &self.pointers[value_index] {
             Pointer::Values(values) => {
                 let mut node = (**self).clone();
-                let mut values = (*values).clone();
-                let value = values
-                    .iter()
-                    .position(|p| &p.key == key)
-                    .map(|i| values.remove(i));
-                node.pointers[value_index] = Pointer::Values(values);
+                let value = if values.len() == 1 {
+                    // If there is only one value, we can remove the entire pointer.
+                    node.bitmask.set(bit_index, false);
+                    let pointer = node.pointers.remove(value_index);
+                    match pointer {
+                        Pointer::Values(mut values) => Some(values.pop().unwrap()),
+                        _ => unreachable!(),
+                    }
+                } else {
+                    // Otherwise, remove the value.
+                    let mut values = (*values).clone();
+                    if let Some(i) = values.iter().position(|p| p.key == *key) {
+                        let value = values.remove(i);
+                        node.pointers[value_index] = Pointer::Values(values);
+                        Some(value)
+                    } else {
+                        None
+                    }
+                };
+
                 (Rc::new(node), value)
             }
             Pointer::Link(link) => {
@@ -216,20 +258,6 @@ where
 }
 
 impl<K, V, H: Hasher> Node<K, V, H> {
-    /// Returns the count of the values in all the values pointer of a node.
-    pub fn count_values(self: &Rc<Self>) -> Result<usize> {
-        let mut len = 0;
-        for i in self.pointers.iter() {
-            if let Pointer::Values(values) = i {
-                len += values.len();
-            } else {
-                bail!(HamtError::ValuesPointerExpected);
-            }
-        }
-
-        Ok(len)
-    }
-
     /// Converts a Node to an IPLD object.
     pub async fn to_ipld<B: BlockStore + ?Sized>(&self, store: &mut B) -> Result<Ipld>
     where
@@ -316,53 +344,194 @@ where
 mod hamt_node_tests {
     use super::*;
     use crate::{dagcbor, private::hamt::hash::HashOutput, MemoryBlockStore};
+    use lazy_static::lazy_static;
     use test_log::test;
 
-    fn nibbles(bytes: &[u8]) -> HashOutput {
+    fn digest(bytes: &[u8]) -> HashOutput {
         let mut nibbles = [0u8; 32];
         nibbles[..bytes.len()].copy_from_slice(bytes);
         nibbles
     }
 
+    lazy_static! {
+        static ref HASH_KV_PAIRS: Vec<(HashOutput, &'static str)> = vec![
+            (digest(&[0xE0]), "first"),
+            (digest(&[0xE1]), "second"),
+            (digest(&[0xE2]), "third"),
+            (digest(&[0xE3]), "fourth"),
+        ];
+    }
+
+    #[derive(Debug, Clone)]
+    struct MockHasher;
+    impl Hasher for MockHasher {
+        fn hash<K: AsRef<[u8]>>(key: &K) -> HashOutput {
+            let s = std::str::from_utf8(key.as_ref()).unwrap();
+            HASH_KV_PAIRS
+                .iter()
+                .find(|(_, v)| s == *v)
+                .unwrap()
+                .0
+                .clone()
+        }
+    }
+
     #[test(async_std::test)]
-    async fn modify_value_can_change_pointer() {
-        let mut store = MemoryBlockStore::default();
-        let node = Rc::new(Node::<String, String>::default());
+    async fn get_value_gets_deeply_linked_value() {
+        let store = &mut MemoryBlockStore::default();
 
-        let bytes = &nibbles(&[0x21, 0x10]);
-        let nibbles_1 = &mut HashNibbles::new(bytes);
+        // Insert 4 values to trigger the creation of a linked node.
+        let mut working_node = Rc::new(Node::<String, String, MockHasher>::default());
+        for (digest, kv) in HASH_KV_PAIRS.iter() {
+            let hashnibbles = &mut HashNibbles::new(&digest);
+            working_node = working_node
+                .modify_value(hashnibbles, kv.to_string(), kv.to_string(), store)
+                .await
+                .unwrap();
+        }
 
-        let bytes = &nibbles(&[0x21, 0x20]);
-        let nibbles_2 = &mut HashNibbles::new(bytes);
+        // Get the values.
+        for (digest, kv) in HASH_KV_PAIRS.iter() {
+            let hashnibbles = &mut HashNibbles::new(&digest);
+            let value = working_node
+                .get_value(hashnibbles, &kv.to_string(), store)
+                .await
+                .unwrap();
 
-        let result_1 = node
-            .modify_value(nibbles_1, String::new(), "First".into(), &mut store)
+            assert_eq!(value, Some(&Pair::new(kv.to_string(), kv.to_string())));
+        }
+    }
+
+    #[test(async_std::test)]
+    async fn remove_value_removes_deeply_linked_value() {
+        let store = &mut MemoryBlockStore::default();
+
+        // Insert 4 values to trigger the creation of a linked node.
+        let mut working_node = Rc::new(Node::<String, String, MockHasher>::default());
+        for (digest, kv) in HASH_KV_PAIRS.iter() {
+            let hashnibbles = &mut HashNibbles::new(&digest);
+            working_node = working_node
+                .modify_value(hashnibbles, kv.to_string(), kv.to_string(), store)
+                .await
+                .unwrap();
+        }
+
+        // Remove the third value.
+        let third_hashnibbles = &mut HashNibbles::new(&HASH_KV_PAIRS[2].0);
+        working_node = working_node
+            .remove_value(third_hashnibbles, &"third".to_string(), store)
+            .await
+            .unwrap()
+            .0;
+
+        // Check that the third value is gone.
+        match &working_node.pointers[0] {
+            Pointer::Link(link) => {
+                let node = link.get_value().unwrap();
+                assert_eq!(node.bitmask.count_ones(), 3);
+                assert_eq!(node.pointers.len(), 3);
+            }
+            _ => panic!("Expected link pointer"),
+        }
+
+        let value = working_node
+            .get_value(third_hashnibbles, &"third".to_string(), store)
             .await
             .unwrap();
 
-        debug!(
-            "result_1: bitmask: {:?}, pointers: {:#?}",
-            result_1.bitmask, result_1.pointers
-        );
+        assert!(value.is_none());
+    }
 
-        let result_2 = result_1
-            .modify_value(nibbles_2, String::new(), "Second".into(), &mut store)
+    #[test(async_std::test)]
+    async fn modify_value_can_split_when_value_bucket_threshold_reached() {
+        let store = &mut MemoryBlockStore::default();
+
+        // Insert 3 values into the HAMT.
+        let mut working_node = Rc::new(Node::<String, String>::default());
+        for (idx, (digest, kv)) in HASH_KV_PAIRS.iter().take(3).enumerate() {
+            let kv = kv.to_string();
+            let hashnibbles = &mut HashNibbles::new(&digest);
+            working_node = working_node
+                .modify_value(hashnibbles, kv.clone(), kv.clone(), store)
+                .await
+                .unwrap();
+
+            match &working_node.pointers[0] {
+                Pointer::Values(values) => {
+                    assert_eq!(values.len(), idx + 1);
+                    assert_eq!(values[0].key, kv.clone());
+                    assert_eq!(values[0].value, kv.clone());
+                }
+                _ => panic!("Expected values pointer"),
+            }
+        }
+
+        // Inserting the fourth value should introduce a link indirection.
+        working_node = working_node
+            .modify_value(
+                &mut HashNibbles::new(&HASH_KV_PAIRS[3].0),
+                "fourth".to_string(),
+                "fourth".to_string(),
+                store,
+            )
             .await
             .unwrap();
 
-        debug!(
-            "result_2: bitmask: {:?}, pointers: {:#?}",
-            result_2.bitmask, result_2.pointers
-        );
+        match &working_node.pointers[0] {
+            Pointer::Link(link) => {
+                let node = link.get_value().unwrap();
+                assert_eq!(node.bitmask.count_ones(), 4);
+                assert_eq!(node.pointers.len(), 4);
+            }
+            _ => panic!("Expected link pointer"),
+        }
     }
 
     #[test(async_std::test)]
     async fn get_value_index_gets_correct_index() {
-        // TODO(appcypher): We need the modify_value test working, then we can test if indexes are correct after multiple inserts.
-        let node = Rc::new(Node::<String, String>::default());
+        let store = &mut MemoryBlockStore::default();
+        let hash_expected_idx_samples = [
+            (&[0x00], 0),
+            (&[0x20], 1),
+            (&[0x10], 1),
+            (&[0x30], 3),
+            (&[0x50], 4),
+            (&[0x60], 5),
+            (&[0x70], 6),
+            (&[0x40], 4),
+            (&[0x80], 8),
+            (&[0xA0], 9),
+            (&[0xB0], 10),
+            (&[0xC0], 11),
+            (&[0x90], 9),
+            (&[0xE0], 13),
+            (&[0xD0], 13),
+            (&[0xF0], 15),
+        ];
 
-        let bytes = &nibbles(&[0x25]);
-        let nibbles_1 = &mut HashNibbles::new(bytes);
+        let mut working_node = Rc::new(Node::<String, String>::default());
+        for (hash, expected_idx) in hash_expected_idx_samples.into_iter() {
+            let bytes = digest(&hash[..]);
+            let hashnibbles = &mut HashNibbles::new(&bytes);
+
+            working_node = working_node
+                .modify_value(
+                    hashnibbles,
+                    expected_idx.to_string(),
+                    expected_idx.to_string(),
+                    store,
+                )
+                .await
+                .unwrap();
+
+            assert_eq!(
+                working_node.pointers[expected_idx],
+                Pointer::Values(vec![Pair::new(
+                    expected_idx.to_string(),
+                    expected_idx.to_string()
+                )])
+            );
+        }
     }
 
     #[test(async_std::test)]

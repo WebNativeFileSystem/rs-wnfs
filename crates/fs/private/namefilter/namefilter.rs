@@ -36,7 +36,7 @@ impl Namefilter {
     fn saturate(&mut self) {
         let mut xof = {
             let mut h = Shake256::default();
-            h.update(&self.as_bytes());
+            h.update(self.as_bytes());
             h.finalize_xof()
         };
 
