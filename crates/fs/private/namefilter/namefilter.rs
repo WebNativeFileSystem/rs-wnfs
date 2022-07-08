@@ -10,6 +10,7 @@ use super::BloomFilter;
 //--------------------------------------------------------------------------------------------------
 
 pub const SATURATION_THRESHOLD: usize = 1019;
+pub const HASH_BYTE_SIZE: usize = 32;
 
 //--------------------------------------------------------------------------------------------------
 // Type Definitions
@@ -25,25 +26,23 @@ pub type Namefilter = BloomFilter<256, 30>;
 //--------------------------------------------------------------------------------------------------
 
 impl Namefilter {
-    /// Creates a saturated namefilter.
-    pub fn new_saturated() -> Self {
-        let mut filter = Self::new();
-        filter.saturate();
-        filter
-    }
-
     /// Adds hashes to filter until is is over the saturation threshold.
-    fn saturate(&mut self) {
+    pub fn saturate(&mut self) {
         let mut xof = {
             let mut h = Shake256::default();
             h.update(self.as_bytes());
             h.finalize_xof()
         };
 
-        while self.count_ones() <= SATURATION_THRESHOLD {
-            let buffer = &mut [0u8; 32];
-            xof.read(buffer);
-            self.add(buffer);
+        let hash = &mut [0u8; HASH_BYTE_SIZE];
+        loop {
+            xof.read(hash);
+            let mut clone = self.clone();
+            clone.add(hash);
+            if clone.count_ones() > SATURATION_THRESHOLD {
+                break;
+            }
+            *self = clone
         }
     }
 }
@@ -63,13 +62,20 @@ mod namefilter_tests {
     use super::*;
 
     #[test]
-    fn saturate_not_less_than_threshold() {
-        let namefilters = (0..100)
-            .map(|_| Namefilter::new_saturated())
+    fn saturate_not_greater_than_threshold() {
+        let namefilters = (0..47)
+            .map(|i| {
+                let mut namefilter = Namefilter::new();
+                for i in 0..i {
+                    namefilter.add(&[i as u8]);
+                }
+                namefilter.saturate();
+                namefilter
+            })
             .collect::<Vec<_>>();
 
         for namefilter in namefilters {
-            assert!(namefilter.count_ones() >= SATURATION_THRESHOLD);
+            assert!(namefilter.count_ones() <= SATURATION_THRESHOLD);
         }
     }
 }

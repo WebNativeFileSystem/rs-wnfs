@@ -82,13 +82,7 @@ impl<const N: usize, const K: usize> BloomFilter<N, K> {
     where
         T: AsRef<[u8]>,
     {
-        for i in self.hash_indices(item) {
-            if !self.bits[i] {
-                return false;
-            }
-        }
-
-        true
+        self.hash_indices(item).all(|i| self.bits[i])
     }
 
     /// Counts the number of bits set in the bloom filter.
