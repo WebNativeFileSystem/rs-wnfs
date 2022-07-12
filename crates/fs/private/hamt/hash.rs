@@ -1,7 +1,7 @@
-// TODO(appcypher): Based on ipld_hamt implementation
-
 use anyhow::{bail, Result};
 use sha3::{Digest, Sha3_256};
+
+use crate::{HashOutput, HASH_BYTE_SIZE};
 
 use super::error::HamtError;
 
@@ -9,14 +9,11 @@ use super::error::HamtError;
 // Constants
 //--------------------------------------------------------------------------------------------------
 
-const HASH_BYTE_SIZE: usize = 32;
 const MAX_CURSOR_DEPTH: usize = HASH_BYTE_SIZE * 2;
 
 //--------------------------------------------------------------------------------------------------
 // Type Definition
 //--------------------------------------------------------------------------------------------------
-
-pub type HashOutput = [u8; HASH_BYTE_SIZE];
 
 /// A common trait for the ability to generate a hash of some data.
 pub trait Hasher {

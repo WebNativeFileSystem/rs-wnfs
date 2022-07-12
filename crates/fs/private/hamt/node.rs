@@ -1,9 +1,7 @@
 use std::{fmt::Debug, marker::PhantomData, rc::Rc};
 
-use std::{fmt::Debug, marker::PhantomData, rc::Rc};
-
 use crate::{private::HAMT_VALUES_BUCKET_SIZE, AsyncSerialize, BlockStore, Link};
-use anyhow::Result;
+use anyhow::{bail, Result};
 use async_recursion::async_recursion;
 use async_trait::async_trait;
 use bitvec::array::BitArray;
@@ -18,6 +16,7 @@ use serde::{
 use sha3::Sha3_256;
 
 use super::{
+    error::HamtError,
     hash::{HashNibbles, Hasher},
     Pair, Pointer, HAMT_BITMASK_BIT_SIZE, HAMT_BITMASK_BYTE_SIZE,
 };
@@ -44,7 +43,7 @@ where
 
 impl<K, V, H> Node<K, V, H>
 where
-    K: DeserializeOwned + Serialize + AsRef<[u8]> + Clone + Eq + Debug,
+    K: DeserializeOwned + Serialize + AsRef<[u8]> + Clone + Eq + PartialOrd + Debug,
     V: DeserializeOwned + Serialize + Clone + Debug,
     H: Hasher + Clone + Debug,
 {
@@ -135,34 +134,39 @@ where
             return Ok(Rc::new(node));
         }
 
-        // Otherwise, we go one level deep.
         Ok(match &self.pointers[value_index] {
             Pointer::Values(values) => {
                 let mut node = (**self).clone();
-                let pointers = {
+                let pointers: Pointer<_, _, H> = {
                     let mut values = (*values).clone();
                     if let Some(i) = values.iter().position(|p| p.key == key) {
                         // If the key is already present, update the value.
                         values[i] = Pair::new(key, value);
-                        Pointer::<_, _, H>::Values(values)
+                        Pointer::Values(values)
                     } else {
-                        // Otherwise, insert the new value.
-                        values.insert(value_index, Pair::new(key, value));
-                        if values.len() > HAMT_VALUES_BUCKET_SIZE {
-                            // If values has reached threshold, we need to create a link that splits it.
+                        // Otherwise, insert the new value if bucket is not full. Create new node if it is.
+                        if values.len() < HAMT_VALUES_BUCKET_SIZE {
+                            // Insert in order of key.
+                            let index = values
+                                .iter()
+                                .position(|p| p.key > key)
+                                .unwrap_or(values.len());
+                            values.insert(index, Pair::new(key, value));
+                            Pointer::Values(values)
+                        } else {
+                            // If values has reached threshold, we need to create a node link that splits it.
                             let mut sub_node = Rc::new(Node::<K, V, H>::default());
                             let cursor = hashnibbles.get_cursor();
-                            for value in values.into_iter() {
-                                let hash = &H::hash(&value.key);
+                            for Pair { key, value } in
+                                values.into_iter().chain(Some(Pair::new(key, value)))
+                            {
+                                let hash = &H::hash(&key);
                                 let hashnibbles = &mut HashNibbles::with_cursor(hash, cursor);
-
                                 sub_node = sub_node
-                                    .modify_value(hashnibbles, value.key, value.value, store)
+                                    .modify_value(hashnibbles, key, value, store)
                                     .await?;
                             }
-                            Pointer::<_, _, H>::Link(Link::from(sub_node))
-                        } else {
-                            Pointer::<_, _, H>::Values(values)
+                            Pointer::Link(Link::from(sub_node))
                         }
                     }
                 };
@@ -194,7 +198,6 @@ where
             return Ok(None);
         }
 
-        // Otherwise, we go one level deep.
         let value_index = self.get_value_index(bit_index);
         match &self.pointers[value_index] {
             Pointer::Values(values) => Ok(values.iter().find(|kv| key.eq(&kv.key))),
@@ -219,7 +222,6 @@ where
             return Ok((Rc::clone(self), None));
         }
 
-        // Otherwise, we go one level deep.
         let value_index = self.get_value_index(bit_index);
         Ok(match &self.pointers[value_index] {
             Pointer::Values(values) => {
@@ -227,21 +229,18 @@ where
                 let value = if values.len() == 1 {
                     // If there is only one value, we can remove the entire pointer.
                     node.bitmask.set(bit_index, false);
-                    let pointer = node.pointers.remove(value_index);
-                    match pointer {
+                    match node.pointers.remove(value_index) {
                         Pointer::Values(mut values) => Some(values.pop().unwrap()),
                         _ => unreachable!(),
                     }
                 } else {
-                    // Otherwise, remove the value.
+                    // Otherwise, remove just the value.
                     let mut values = (*values).clone();
-                    if let Some(i) = values.iter().position(|p| p.key == *key) {
+                    values.iter().position(|p| p.key == *key).map(|i| {
                         let value = values.remove(i);
                         node.pointers[value_index] = Pointer::Values(values);
-                        Some(value)
-                    } else {
-                        None
-                    }
+                        value
+                    })
                 };
 
                 (Rc::new(node), value)
@@ -249,8 +248,24 @@ where
             Pointer::Link(link) => {
                 let child = Rc::clone(link.resolve_value(store).await?);
                 let (child, value) = child.remove_value(hashnibbles, key, store).await?;
+
                 let mut node = (**self).clone();
-                node.pointers[value_index] = Pointer::Link(Link::from(child));
+                if value.is_some() {
+                    // If something has been deleted, we attempt toc canonicalize the pointer.
+                    if let Some(pointer) =
+                        Pointer::Link(Link::from(child)).canonicalize(store).await?
+                    {
+                        node.pointers[value_index] = pointer;
+                    } else {
+                        // This is None if the pointer now points to an empty node.
+                        // In that case, we remove it from the parent.
+                        node.bitmask.set(bit_index, false);
+                        node.pointers.remove(value_index);
+                    }
+                } else {
+                    node.pointers[value_index] = Pointer::Link(Link::from(child))
+                };
+
                 (Rc::new(node), value)
             }
         })
@@ -258,6 +273,20 @@ where
 }
 
 impl<K, V, H: Hasher> Node<K, V, H> {
+    /// Returns the count of the values in all the values pointer of a node.
+    pub fn count_values(self: &Rc<Self>) -> Result<usize> {
+        let mut len = 0;
+        for i in self.pointers.iter() {
+            if let Pointer::Values(values) = i {
+                len += values.len();
+            } else {
+                bail!(HamtError::ValuesPointerExpected);
+            }
+        }
+
+        Ok(len)
+    }
+
     /// Converts a Node to an IPLD object.
     pub async fn to_ipld<B: BlockStore + ?Sized>(&self, store: &mut B) -> Result<Ipld>
     where
@@ -343,7 +372,7 @@ where
 #[cfg(test)]
 mod hamt_node_tests {
     use super::*;
-    use crate::{dagcbor, private::hamt::hash::HashOutput, MemoryBlockStore};
+    use crate::{dagcbor, HashOutput, MemoryBlockStore};
     use lazy_static::lazy_static;
     use test_log::test;
 
@@ -377,7 +406,7 @@ mod hamt_node_tests {
     }
 
     #[test(async_std::test)]
-    async fn get_value_gets_deeply_linked_value() {
+    async fn get_value_fetches_deeply_linked_value() {
         let store = &mut MemoryBlockStore::default();
 
         // Insert 4 values to trigger the creation of a linked node.
@@ -403,7 +432,7 @@ mod hamt_node_tests {
     }
 
     #[test(async_std::test)]
-    async fn remove_value_removes_deeply_linked_value() {
+    async fn remove_value_canonicalizes_linked_node() {
         let store = &mut MemoryBlockStore::default();
 
         // Insert 4 values to trigger the creation of a linked node.
@@ -416,6 +445,8 @@ mod hamt_node_tests {
                 .unwrap();
         }
 
+        assert_eq!(working_node.pointers.len(), 1);
+
         // Remove the third value.
         let third_hashnibbles = &mut HashNibbles::new(&HASH_KV_PAIRS[2].0);
         working_node = working_node
@@ -426,12 +457,10 @@ mod hamt_node_tests {
 
         // Check that the third value is gone.
         match &working_node.pointers[0] {
-            Pointer::Link(link) => {
-                let node = link.get_value().unwrap();
-                assert_eq!(node.bitmask.count_ones(), 3);
-                assert_eq!(node.pointers.len(), 3);
+            Pointer::Values(values) => {
+                assert_eq!(values.len(), 3);
             }
-            _ => panic!("Expected link pointer"),
+            _ => panic!("Expected values pointer"),
         }
 
         let value = working_node
@@ -443,11 +472,11 @@ mod hamt_node_tests {
     }
 
     #[test(async_std::test)]
-    async fn modify_value_can_split_when_value_bucket_threshold_reached() {
+    async fn modify_value_splits_when_bucket_threshold_reached() {
         let store = &mut MemoryBlockStore::default();
 
         // Insert 3 values into the HAMT.
-        let mut working_node = Rc::new(Node::<String, String>::default());
+        let mut working_node = Rc::new(Node::<String, String, MockHasher>::default());
         for (idx, (digest, kv)) in HASH_KV_PAIRS.iter().take(3).enumerate() {
             let kv = kv.to_string();
             let hashnibbles = &mut HashNibbles::new(&digest);
@@ -459,8 +488,8 @@ mod hamt_node_tests {
             match &working_node.pointers[0] {
                 Pointer::Values(values) => {
                     assert_eq!(values.len(), idx + 1);
-                    assert_eq!(values[0].key, kv.clone());
-                    assert_eq!(values[0].value, kv.clone());
+                    assert_eq!(values[idx].key, kv.clone());
+                    assert_eq!(values[idx].value, kv.clone());
                 }
                 _ => panic!("Expected values pointer"),
             }

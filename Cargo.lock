@@ -1943,6 +1943,7 @@ dependencies = [
  "sha3",
  "skip_ratchet",
  "test-log",
+ "thiserror",
  "xxhash-rust",
 ]
 
