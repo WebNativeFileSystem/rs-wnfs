@@ -20,9 +20,9 @@ use super::{Node, HAMT_VERSION};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Hamt<K, V> {
-    root: Rc<Node<K, V>>,
-    version: Version,
-    structure: Structure,
+    pub root: Rc<Node<K, V>>,
+    pub version: Version,
+    pub structure: Structure,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -35,6 +35,15 @@ pub enum Structure {
 //--------------------------------------------------------------------------------------------------
 
 impl<K, V> Hamt<K, V> {
+    /// Creates a new empty Hamt.
+    pub fn new() -> Self {
+        Self {
+            root: Rc::new(Node::default()),
+            version: HAMT_VERSION,
+            structure: Structure::HAMT,
+        }
+    }
+
     /// Creates a new `Hamt` with the given root node.
     pub fn with_root(root: Rc<Node<K, V>>) -> Self {
         Self {
@@ -144,6 +153,12 @@ impl TryFrom<&str> for Structure {
             "hamt" => Structure::HAMT,
             _ => return Err(format!("Unknown Structure: {}", name)),
         })
+    }
+}
+
+impl<K, V> Default for Hamt<K, V> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

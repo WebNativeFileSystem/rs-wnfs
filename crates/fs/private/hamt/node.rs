@@ -49,7 +49,7 @@ where
 {
     /// Sets a new value at the given key.
     pub async fn set<B: BlockStore>(
-        self: Rc<Self>,
+        self: &Rc<Self>,
         key: K,
         value: V,
         store: &mut B,
@@ -76,7 +76,7 @@ where
 
     /// Removes the value at the given key.
     pub async fn remove<'a, B: BlockStore>(
-        self: Rc<Self>,
+        self: &Rc<Self>,
         key: &K,
         store: &B,
     ) -> Result<(Rc<Self>, Option<V>)> {

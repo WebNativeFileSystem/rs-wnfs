@@ -1,6 +1,6 @@
 [package]
 name = "wnfs"
-version = "0.1.6"
+version = "0.1.7-alpha.0"
 description = "WebNative filesystem core implementation"
 keywords = ["wnfs", "webnative", "ipfs", "decentralisation"]
 categories = [
@@ -31,8 +31,8 @@ async-recursion = "1.0.0"
 futures = "0.3.21"
 async-stream = "0.3.3"
 futures-util = "0.3.21"
-skip_ratchet = { git = "https://github.com/appcypher/rs-skip-ratchet", branch = "appcypher/doc-and-structure" }
-bitvec = "1.0.0"
+skip_ratchet = { git = "https://github.com/appcypher/rs-skip-ratchet", rev = "8fdc6d271d04c653c8a14ba03806b3add16a341b", version = "0.1.0" }
+bitvec = { version = "1.0.0", features = ["serde"] }
 async-once-cell = "0.4.0"
 sha3 = "0.10.0"
 log = "0.4.17"

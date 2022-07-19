@@ -1,6 +1,7 @@
 use std::ops::Index;
 
 use bitvec::prelude::BitArray;
+use serde::{Deserialize, Serialize};
 use xxhash_rust::xxh3;
 
 //------------------------------------------------------------------------------
@@ -12,7 +13,7 @@ use xxhash_rust::xxh3;
 /// `N` is the size of the bloom filter in bytes.
 ///
 /// `K` is the number of bits to be set with each add operation.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, PartialOrd)]
 pub struct BloomFilter<const N: usize, const K: usize> {
     pub(super) bits: BitArray<[u8; N]>,
 }
