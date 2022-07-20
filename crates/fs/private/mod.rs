@@ -1,4 +1,4 @@
-mod crypto;
+mod key;
 mod directory;
 mod file;
 mod hamt;
@@ -7,7 +7,7 @@ mod namefilter;
 mod node;
 mod store;
 
-pub use crypto::*;
+pub use key::*;
 pub use directory::*;
 pub use file::*;
 pub use hamt::*;

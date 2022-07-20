@@ -1494,11 +1494,12 @@ dependencies = [
 [[package]]
 name = "skip_ratchet"
 version = "0.1.0"
-source = "git+https://github.com/appcypher/rs-skip-ratchet?rev=8fdc6d271d04c653c8a14ba03806b3add16a341b#8fdc6d271d04c653c8a14ba03806b3add16a341b"
+source = "git+https://github.com/WebNativeFileSystem/rs-skip-ratchet?rev=d14863f8d26497a167bef8ad13ac0dde366bdce9#d14863f8d26497a167bef8ad13ac0dde366bdce9"
 dependencies = [
  "base64",
  "hex",
  "rand 0.6.3",
+ "serde",
  "sha3",
 ]
 

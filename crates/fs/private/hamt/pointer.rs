@@ -10,7 +10,7 @@ use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
 };
 
-use crate::{error, AsyncSerialize, BlockStore, Link};
+use crate::{error, AsyncSerialize, BlockStore, Link, ReferenceableStore};
 
 use super::{error::HamtError, hash::Hasher, Node, HAMT_VALUES_BUCKET_SIZE};
 
@@ -84,7 +84,10 @@ impl<K, V, H: Hasher> Pointer<K, V, H> {
     }
 
     /// Converts a Pointer to an IPLD object.
-    pub async fn to_ipld<B: BlockStore + ?Sized>(&self, store: &mut B) -> Result<Ipld>
+    pub async fn to_ipld<RS: ReferenceableStore<Self> + ?Sized>(
+        &self,
+        store: &mut RS,
+    ) -> Result<Ipld>
     where
         K: Serialize,
         V: Serialize,
@@ -102,10 +105,10 @@ where
     K: Serialize,
     V: Serialize,
 {
-    async fn async_serialize<S: Serializer, B: BlockStore + ?Sized>(
+    async fn async_serialize<S: Serializer, RS: ReferenceableStore<Self> + ?Sized>(
         &self,
         serializer: S,
-        store: &mut B,
+        store: &mut RS,
     ) -> Result<S::Ok, S::Error> {
         match self {
             Pointer::Values(vals) => vals.serialize(serializer),

@@ -9,7 +9,7 @@ use libipld::{Cid, Ipld};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 use super::{PublicDirectory, PublicFile};
-use crate::{common::BlockStore, AsyncSerialize, FsError, Id, Metadata, UnixFsNodeKind};
+use crate::{common::BlockStore, AsyncSerialize, FsError, Id, Metadata, UnixFsNodeKind, ReferenceableStore};
 
 //--------------------------------------------------------------------------------------------------
 // Type Definitions
@@ -189,10 +189,10 @@ impl From<PublicDirectory> for PublicNode {
 /// Implements async deserialization for serde serializable types.
 #[async_trait(?Send)]
 impl AsyncSerialize for PublicNode {
-    async fn async_serialize<S: Serializer, B: BlockStore + ?Sized>(
+    async fn async_serialize<S: Serializer, RS: ReferenceableStore<Self> + ?Sized>(
         &self,
         serializer: S,
-        store: &mut B,
+        store: &mut RS,
     ) -> Result<S::Ok, S::Error> {
         match self {
             Self::File(file) => file.serialize(serializer),

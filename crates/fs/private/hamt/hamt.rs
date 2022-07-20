@@ -10,7 +10,7 @@ use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
 };
 
-use crate::{AsyncSerialize, BlockStore};
+use crate::{AsyncSerialize, ReferenceableStore};
 
 use super::{Node, HAMT_VERSION};
 
@@ -54,7 +54,7 @@ impl<K, V> Hamt<K, V> {
     }
 
     /// Converts a HAMT to an IPLD object.
-    pub async fn to_ipld<B: BlockStore + ?Sized>(&self, store: &mut B) -> Result<Ipld>
+    pub async fn to_ipld<RS: ReferenceableStore<Self> + ?Sized>(&self, store: &mut RS) -> Result<Ipld>
     where
         K: Serialize,
         V: Serialize,
@@ -73,10 +73,10 @@ where
     K: Serialize,
     V: Serialize,
 {
-    async fn async_serialize<S: Serializer, B: BlockStore + ?Sized>(
+    async fn async_serialize<S: Serializer, RS: ReferenceableStore<Self> + ?Sized>(
         &self,
         serializer: S,
-        store: &mut B,
+        store: &mut RS,
     ) -> Result<S::Ok, S::Error> {
         self.to_ipld(store)
             .await

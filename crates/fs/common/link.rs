@@ -1,7 +1,6 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use libipld::Cid;
-use serde::de::DeserializeOwned;
 
 use crate::{AsyncSerialize, Referenceable, ReferenceableStore};
 use crate::{BlockStore, IpldEq};
@@ -28,9 +27,12 @@ impl<T> Link<T> {
         Self::from_reference(cid)
     }
 
-    /// Gets the Cid stored in link. It attempts to get it from the store if it is not present in link.
+    /// Gets the reference stored in type. It attempts to get it from the store if it is not present in type.
     #[inline]
-    pub async fn resolve_cid<'a, B: BlockStore + ?Sized>(&'a self, store: &mut B) -> Result<&'a Cid>
+    pub async fn resolve_cid<'a, RS: ReferenceableStore<T, Reference = Cid> + ?Sized>(
+        &'a self,
+        store: &mut RS,
+    ) -> Result<&'a Cid>
     where
         T: AsyncSerialize,
     {
@@ -64,19 +66,6 @@ impl<T: PartialEq + AsyncSerialize> IpldEq for Link<T> {
         }
 
         Ok(self.resolve_cid(store).await? == other.resolve_cid(store).await?)
-    }
-}
-
-#[async_trait(?Send)]
-impl<V, T: BlockStore + ?Sized> ReferenceableStore<V> for T {
-    type Reference = Cid;
-
-    async fn get_value(&self, reference: &Self::Reference) -> Result<V> where V: DeserializeOwned {
-        self.get_deserializable(reference).await
-    }
-
-    async fn put_value(&mut self, value: &V) -> Result<Self::Reference> where V: AsyncSerialize {
-        self.put_async_serializable(value).await
     }
 }
 

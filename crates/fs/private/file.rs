@@ -1,25 +1,25 @@
 use chrono::{DateTime, Utc};
-use skip_ratchet::Ratchet;
+use serde::{Deserialize, Serialize};
 
 use crate::{HashOutput, Metadata, UnixFsNodeKind};
 
-use super::{INumber, Namefilter, PrivateNodeHeader, PrivateNodeSchema};
+use super::{INumber, Namefilter, PrivateNodeHeader};
 
 //--------------------------------------------------------------------------------------------------
 // Type Definitions
 //--------------------------------------------------------------------------------------------------
 
-pub enum PrivateFileContent {
-    Data(Vec<u8>),
-    Structure { ratchet: Ratchet, count: u32 }, // TODO(appcypher): I don't fully understand how this works.
-}
-
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PrivateFileMain {
     metadata: Metadata,
-    content: PrivateFileContent,
+    content: Vec<u8>, // Inlined file content. // TODO(appcypher): Support linked file content.
 }
 
-pub type PrivateFile = PrivateNodeSchema<PrivateFileMain>;
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PrivateFile {
+    header: PrivateNodeHeader,
+    main: PrivateFileMain,
+}
 
 //--------------------------------------------------------------------------------------------------
 // Implementations
@@ -27,14 +27,14 @@ pub type PrivateFile = PrivateNodeSchema<PrivateFileMain>;
 
 impl PrivateFile {
     pub fn new(
-        parent_namefilter: Option<Namefilter>,
+        parent_bare_name: Option<Namefilter>,
         inumber: INumber,
         ratchet_seed: HashOutput,
         time: DateTime<Utc>,
-        content: PrivateFileContent,
+        content: Vec<u8>,
     ) -> Self {
         Self {
-            header: PrivateNodeHeader::new(parent_namefilter, inumber, ratchet_seed),
+            header: PrivateNodeHeader::new(parent_bare_name, inumber, ratchet_seed),
             main: PrivateFileMain {
                 metadata: Metadata::new(time, UnixFsNodeKind::Dir),
                 content,

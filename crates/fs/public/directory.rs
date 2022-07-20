@@ -2,7 +2,7 @@
 
 use std::{collections::BTreeMap, rc::Rc};
 
-use crate::{error, AsyncSerialize, BlockStore, FsError, Id, Metadata, OpResult, UnixFsNodeKind};
+use crate::{error, AsyncSerialize, BlockStore, FsError, Id, Metadata, OpResult, UnixFsNodeKind, ReferenceableStore};
 use anyhow::{bail, ensure, Result};
 use async_recursion::async_recursion;
 use async_stream::try_stream;
@@ -993,10 +993,10 @@ impl Id for PublicDirectory {
 /// Implements async deserialization for serde serializable types.
 #[async_trait(?Send)]
 impl AsyncSerialize for PublicDirectory {
-    async fn async_serialize<S: Serializer, B: BlockStore + ?Sized>(
+    async fn async_serialize<S: Serializer, RS: ReferenceableStore<Self> + ?Sized>(
         &self,
         serializer: S,
-        store: &mut B,
+        store: &mut RS,
     ) -> Result<S::Ok, S::Error> {
         let encoded_userland = {
             let mut map = BTreeMap::new();

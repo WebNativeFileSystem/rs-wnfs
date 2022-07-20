@@ -1,6 +1,6 @@
 use std::{fmt::Debug, marker::PhantomData, rc::Rc};
 
-use crate::{private::HAMT_VALUES_BUCKET_SIZE, AsyncSerialize, BlockStore, Link};
+use crate::{private::HAMT_VALUES_BUCKET_SIZE, AsyncSerialize, BlockStore, Link, ReferenceableStore};
 use anyhow::{bail, Result};
 use async_recursion::async_recursion;
 use async_trait::async_trait;
@@ -107,7 +107,7 @@ where
     }
 
     #[async_recursion(?Send)]
-    pub(super) async fn modify_value<'a, 'b, B: BlockStore>(
+    pub async fn modify_value<'a, 'b, B: BlockStore>(
         self: &'a Rc<Self>,
         hashnibbles: &'b mut HashNibbles,
         key: K,
@@ -185,7 +185,7 @@ where
     }
 
     #[async_recursion(?Send)]
-    pub(super) async fn get_value<'a, 'b, B: BlockStore>(
+    pub async fn get_value<'a, 'b, B: BlockStore>(
         self: &'a Rc<Self>,
         hashnibbles: &'b mut HashNibbles,
         key: &K,
@@ -209,7 +209,7 @@ where
     }
 
     #[async_recursion(?Send)]
-    pub(super) async fn remove_value<'a, 'b, B: BlockStore>(
+    pub async fn remove_value<'a, 'b, B: BlockStore>(
         self: &'a Rc<Self>,
         hashnibbles: &'b mut HashNibbles,
         key: &K,
@@ -288,7 +288,7 @@ impl<K, V, H: Hasher> Node<K, V, H> {
     }
 
     /// Converts a Node to an IPLD object.
-    pub async fn to_ipld<B: BlockStore + ?Sized>(&self, store: &mut B) -> Result<Ipld>
+    pub async fn to_ipld<RS: ReferenceableStore<Self> + ?Sized>(&self, store: &mut RS) -> Result<Ipld>
     where
         K: Serialize,
         V: Serialize,
@@ -323,10 +323,10 @@ where
     V: Serialize,
     H: Hasher,
 {
-    async fn async_serialize<S: Serializer, B: BlockStore + ?Sized>(
+    async fn async_serialize<S: Serializer, RS: ReferenceableStore<Self> + ?Sized>(
         &self,
         serializer: S,
-        store: &mut B,
+        store: &mut RS,
     ) -> Result<S::Ok, S::Error> {
         self.to_ipld(store)
             .await

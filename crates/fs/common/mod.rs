@@ -1,3 +1,4 @@
+mod async_serialize;
 pub mod blockstore;
 mod constants;
 mod encoding;
@@ -7,6 +8,7 @@ mod metadata;
 mod referenceable;
 mod result;
 
+pub use async_serialize::*;
 pub use blockstore::*;
 pub use constants::*;
 pub use encoding::*;

@@ -14,7 +14,7 @@ use libipld::{
 use multihash::{Code, MultihashDigest};
 use serde::{de::DeserializeOwned, Serialize};
 
-use crate::AsyncSerialize;
+use crate::{AsyncSerialize, ReferenceableStore};
 
 use super::FsError;
 
@@ -28,7 +28,7 @@ pub trait BlockStore {
     async fn get_block<'a>(&'a self, cid: &Cid) -> Result<Cow<'a, Vec<u8>>>;
     async fn put_block(&mut self, bytes: Vec<u8>, codec: IpldCodec) -> Result<Cid>;
 
-    async fn put_serializable<S: Serialize>(&mut self, value: &S) -> Result<Cid> {
+    async fn put_serializable<V: Serialize>(&mut self, value: &V) -> Result<Cid> {
         let ipld = ipld_serde::to_ipld(value)?;
 
         let mut bytes = Vec::new();
@@ -37,7 +37,7 @@ pub trait BlockStore {
         self.put_block(bytes, IpldCodec::DagCbor).await
     }
 
-    async fn put_async_serializable<S: AsyncSerialize>(&mut self, value: &S) -> Result<Cid> {
+    async fn put_async_serializable<V: AsyncSerialize>(&mut self, value: &V) -> Result<Cid> {
         let ipld = value.async_serialize_ipld(self).await?;
 
         let mut bytes = Vec::new();
@@ -46,10 +46,10 @@ pub trait BlockStore {
         self.put_block(bytes, IpldCodec::DagCbor).await
     }
 
-    async fn get_deserializable<'a, D: DeserializeOwned>(&'a self, cid: &Cid) -> Result<D> {
+    async fn get_deserializable<'a, V: DeserializeOwned>(&'a self, cid: &Cid) -> Result<V> {
         let bytes = self.get_block(cid).await?;
         let ipld = Ipld::decode(DagCborCodec, &mut Cursor::new(bytes.as_ref()))?;
-        Ok(ipld_serde::from_ipld::<D>(ipld)?)
+        Ok(ipld_serde::from_ipld::<V>(ipld)?)
     }
 }
 
@@ -90,6 +90,25 @@ impl BlockStore for MemoryBlockStore {
             .ok_or(FsError::CIDNotFoundInBlockstore)?;
 
         Ok(Cow::Borrowed(bytes))
+    }
+}
+
+#[async_trait(?Send)]
+impl<V, T: BlockStore + ?Sized> ReferenceableStore<V> for T {
+    type Reference = Cid;
+
+    async fn get_value(&self, reference: &Self::Reference) -> Result<V>
+    where
+        V: DeserializeOwned,
+    {
+        self.get_deserializable(reference).await
+    }
+
+    async fn put_value(&mut self, value: &V) -> Result<Self::Reference>
+    where
+        V: AsyncSerialize,
+    {
+        self.put_async_serializable(value).await
     }
 }
 

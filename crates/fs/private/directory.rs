@@ -4,29 +4,31 @@ use anyhow::{bail, Result};
 use async_recursion::async_recursion;
 use chrono::{DateTime, Utc};
 
-use super::{
-    HamtStore, INumber, Key, Namefilter, PrivateLink, PrivateNode, PrivateNodeHeader,
-    PrivateNodeSchema,
-};
+use super::{HamtStore, INumber, Key, Namefilter, PrivateLink, PrivateNode, PrivateNodeHeader};
 use crate::{BlockStore, FsError, HashOutput, Metadata, UnixFsNodeKind};
 
 //--------------------------------------------------------------------------------------------------
 // Type Definitions
 //--------------------------------------------------------------------------------------------------
 
-// TODO(appcypher): Resolvable<PrivateNode, EncryptedData>
+#[derive(Debug, Clone)]
 pub struct PrivateRef {
-    pub(crate) namefilter: Namefilter, // TODO(appcypher): Why was this Hash<Namefilter>?
-    pub(crate) content_key: Box<dyn Key>,
-    pub(crate) encrypted_revision_key: Vec<u8>, // TODO(appcypher): What is it for?
+    pub(crate) saturated_name_hash: HashOutput, // Sha3-256 hash of saturated namefilter
+    pub(crate) content_key: Rc<Box<dyn Key>>, // A hash or parent skip ratchet.
+    pub(crate) enc_ratchet_key: Vec<u8>, // Encrypted ratchet key.
 }
 
+#[derive(Debug, Clone)]
 pub struct PrivateDirectoryMain {
     pub(crate) metadata: Metadata,
     pub(crate) entries: BTreeMap<String, PrivateLink>,
 }
 
-pub type PrivateDirectory = PrivateNodeSchema<PrivateDirectoryMain>;
+#[derive(Debug, Clone)]
+pub struct PrivateDirectory {
+    pub(crate) header: PrivateNodeHeader,
+    pub(crate) main: PrivateDirectoryMain,
+}
 
 //--------------------------------------------------------------------------------------------------
 // Implementations
@@ -34,13 +36,13 @@ pub type PrivateDirectory = PrivateNodeSchema<PrivateDirectoryMain>;
 
 impl PrivateDirectory {
     pub fn new(
-        parent_namefilter: Option<Namefilter>,
+        parent_bare_name: Option<Namefilter>,
         inumber: INumber,
         ratchet_seed: HashOutput,
         time: DateTime<Utc>,
     ) -> Self {
         Self {
-            header: PrivateNodeHeader::new(parent_namefilter, inumber, ratchet_seed),
+            header: PrivateNodeHeader::new(parent_bare_name, inumber, ratchet_seed),
             main: PrivateDirectoryMain {
                 metadata: Metadata::new(time, UnixFsNodeKind::Dir),
                 entries: BTreeMap::new(),
@@ -76,7 +78,11 @@ impl PrivateDirectory {
         path_segment: &str,
         hamt: &HamtStore<'a, B>,
     ) -> Result<Option<PrivateNode>> {
-        unimplemented!()
+        // Ok(match self.main.entries.get(path_segment) {
+        //     Some(link) => Some(link.resolve_value(hamt).await?.clone()),
+        //     None => None,
+        // })
+        todo!()
     }
 }
 

@@ -26,7 +26,7 @@ pub enum Referenceable<R, V> {
 }
 
 #[async_trait(?Send)]
-pub trait ReferenceableStore<V> {
+pub trait ReferenceableStore<V: ?Sized> {
     type Reference;
 
     async fn get_value(&self, reference: &Self::Reference) -> Result<V>
@@ -52,9 +52,9 @@ impl<R, V> Referenceable<R, V> {
     }
 
     /// Gets an owned value from type. It attempts to it get from the store if it is not present in type.
-    pub async fn get_owned_value<S: ReferenceableStore<V, Reference = R>>(
+    pub async fn get_owned_value<RS: ReferenceableStore<V, Reference = R>>(
         self,
-        store: &S,
+        store: &RS,
     ) -> Result<V>
     where
         V: DeserializeOwned,
@@ -94,9 +94,9 @@ impl<R, V> Referenceable<R, V> {
     }
 
     /// Gets the value stored in link. It attempts to get it from the store if it is not present in link.
-    pub async fn resolve_value<'a, S: ReferenceableStore<V, Reference = R>>(
+    pub async fn resolve_value<'a, RS: ReferenceableStore<V, Reference = R>>(
         &'a self,
-        store: &S,
+        store: &RS,
     ) -> Result<&'a V>
     where
         V: DeserializeOwned,
@@ -115,9 +115,9 @@ impl<R, V> Referenceable<R, V> {
     }
 
     /// Gets the reference stored in type. It attempts to get it from the store if it is not present in type.
-    pub async fn resolve_reference<'a, S: ReferenceableStore<V, Reference = R> + ?Sized>(
+    pub async fn resolve_reference<'a, RS: ReferenceableStore<V, Reference = R> + ?Sized>(
         &'a self,
-        store: &mut S,
+        store: &mut RS,
     ) -> Result<&'a R>
     where
         V: AsyncSerialize,

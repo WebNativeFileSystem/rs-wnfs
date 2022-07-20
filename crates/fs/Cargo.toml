@@ -17,7 +17,7 @@ homepage = "https://fission.codes"
 authors = ["The Fission Authors"]
 
 [dependencies]
-libipld = { version = "0.13.1", features = ["dag-cbor", "derive", "serde-codec" ] }
+libipld = { version = "0.13.1", features = ["dag-cbor", "derive", "serde-codec"] }
 serde_repr = "0.1"
 serde = { version = "1.0.137", features = ["rc"]}
 multihash = "0.16.2"
@@ -31,7 +31,7 @@ async-recursion = "1.0.0"
 futures = "0.3.21"
 async-stream = "0.3.3"
 futures-util = "0.3.21"
-skip_ratchet = { git = "https://github.com/appcypher/rs-skip-ratchet", rev = "8fdc6d271d04c653c8a14ba03806b3add16a341b", version = "0.1.0" }
+skip_ratchet = { git = "https://github.com/WebNativeFileSystem/rs-skip-ratchet", rev = "d14863f8d26497a167bef8ad13ac0dde366bdce9", version = "0.1.0", features = ["serde"] }
 bitvec = { version = "1.0.0", features = ["serde"] }
 async-once-cell = "0.4.0"
 sha3 = "0.10.0"
