@@ -104,8 +104,8 @@ test.describe("PublicDirectory", () => {
     });
 
     expect(result.length).toBe(2);
-    expect(result.includes("dogs")).toBe(true);
-    expect(result.includes("cats")).toBe(true);
+    expect(result[0].name).toBe("cats");
+    expect(result[1].name).toBe("dogs");
   });
 
   test("rm can remove children from directory", async ({ page }) => {
@@ -137,6 +137,7 @@ test.describe("PublicDirectory", () => {
       return result;
     });
 
-    expect(result).toEqual(["dogs"]);
+    expect(result.length).toEqual(1)
+    expect(result[0].name).toEqual("dogs");
   });
 });

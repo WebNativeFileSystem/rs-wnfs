@@ -12,7 +12,7 @@ use wnfs::{
         OpResult as WnfsOpResult, PublicDirectory as WnfsPublicDirectory,
         PublicNode as WnfsPublicNode,
     },
-    Id,
+    BlockStore as WnfsBlockStore, Id,
 };
 
 use crate::fs::{BlockStore, ForeignBlockStore, JsResult, PublicNode};
@@ -86,6 +86,21 @@ impl PublicDirectory {
         }))
     }
 
+    /// Loads a directory given its CID from the block store.
+    pub fn load(cid: Uint8Array, store: BlockStore) -> JsResult<Promise> {
+        let store = ForeignBlockStore(store);
+        let cid = Cid::read_bytes(cid.to_vec().as_slice())
+            .map_err(|e| Error::new(&format!("Cannot parse cid: {e}")))?;
+        Ok(future_to_promise(async move {
+            let directory: WnfsPublicDirectory = store
+                .get_deserializable(&cid)
+                .await
+                .map_err(|e| Error::new(&format!("Couldn't deserialize directory: {e}")))?;
+
+            Ok(value!(PublicDirectory(Rc::new(directory))))
+        }))
+    }
+
     /// Reads specified file content from the directory.
     pub fn read(&self, path_segments: &Array, store: BlockStore) -> JsResult<Promise> {
         let directory = Rc::clone(&self.0);
@@ -98,7 +113,9 @@ impl PublicDirectory {
                 .await
                 .map_err(|e| Error::new(&format!("Cannot read from directory: {e}")))?;
 
-            Ok(utils::create_op_result(root_dir, result.to_string())?)
+            let cid_u8array = Uint8Array::from(&result.to_bytes()[..]);
+
+            Ok(utils::create_op_result(root_dir, cid_u8array)?)
         }))
     }
 
@@ -116,7 +133,7 @@ impl PublicDirectory {
 
             let result = result
                 .iter()
-                .map(|(name, _)| value!(name))
+                .flat_map(|(name, metadata)| utils::create_ls_entry(name, metadata))
                 .collect::<Array>();
 
             Ok(utils::create_op_result(root_dir, result)?)
@@ -169,6 +186,7 @@ impl PublicDirectory {
     }
 
     /// Moves a specified path to a new location.
+    #[wasm_bindgen(js_name = "basicMv")]
     pub fn basic_mv(
         &self,
         path_segments_from: &Array,
@@ -216,6 +234,24 @@ impl PublicDirectory {
         }))
     }
 
+    #[wasm_bindgen(js_name = "baseHistoryOn")]
+    pub fn base_history_on(&self, base: &PublicDirectory, store: BlockStore) -> JsResult<Promise> {
+        let directory = self.0.clone();
+        let base = base.0.clone();
+        let mut store = ForeignBlockStore(store);
+
+        Ok(future_to_promise(async move {
+            let WnfsOpResult { root_dir, .. } = directory
+                .base_history_on(base, &mut store)
+                .await
+                .map_err(|e| {
+                Error::new(&format!("Cannot do history rebase (base_history_on): {e}"))
+            })?;
+
+            Ok(utils::create_op_result(root_dir, JsValue::NULL)?)
+        }))
+    }
+
     /// Converts directory to a node.
     #[wasm_bindgen(js_name = "asNode")]
     pub fn as_node(&self) -> PublicNode {
@@ -236,10 +272,10 @@ impl PublicDirectory {
 mod utils {
     use std::rc::Rc;
 
-    use crate::{fs::JsResult, value};
+    use crate::{fs::metadata::JsMetadata, fs::JsResult, value};
     use js_sys::{Array, Error, Object, Reflect};
     use wasm_bindgen::JsValue;
-    use wnfs::public::PublicDirectory as WnfsPublicDirectory;
+    use wnfs::{public::PublicDirectory as WnfsPublicDirectory, Metadata};
 
     use super::PublicDirectory;
 
@@ -272,5 +308,18 @@ mod utils {
         Reflect::set(&op_result, &value!("result"), &result.into())?;
 
         Ok(value!(op_result))
+    }
+
+    pub(crate) fn create_ls_entry(name: &String, metadata: &Metadata) -> JsResult<JsValue> {
+        let entry = Object::new();
+
+        Reflect::set(&entry, &value!("name"), &value!(name))?;
+        Reflect::set(
+            &entry,
+            &value!("metadata"),
+            &JsMetadata(metadata).try_into()?,
+        )?;
+
+        Ok(value!(entry))
     }
 }

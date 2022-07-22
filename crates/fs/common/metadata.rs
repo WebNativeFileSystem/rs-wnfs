@@ -54,17 +54,17 @@ pub enum UnixFsMode {
 /// See <https://docs.ipfs.io/concepts/file-systems/#unix-file-system-unixfs>
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UnixFsMetadata {
-    pub(crate) created: i64,
-    pub(crate) modified: i64,
-    pub(crate) mode: UnixFsMode,
-    pub(crate) kind: UnixFsNodeKind,
+    pub created: i64,
+    pub modified: i64,
+    pub mode: UnixFsMode,
+    pub kind: UnixFsNodeKind,
 }
 
 /// The metadata of a node on the WNFS file system.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Metadata {
-    pub(crate) unix_fs: UnixFsMetadata,
-    pub(crate) version: Version,
+    pub unix_fs: UnixFsMetadata,
+    pub version: Version,
 }
 
 //--------------------------------------------------------------------------------------------------
