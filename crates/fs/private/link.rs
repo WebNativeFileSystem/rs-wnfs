@@ -4,6 +4,6 @@
 
 use crate::Referenceable;
 
-use super::{PrivateRef, PrivateNode};
+use super::{PrivateNode, PrivateRef};
 
 pub type PrivateLink = Referenceable<PrivateRef, PrivateNode>;

@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, rc::Rc, str::FromStr};
 
 use anyhow::Result;
 use async_trait::async_trait;
-use libipld::{serde as ipld_serde, Ipld};
+use libipld::{serde as ipld_serde, Cid, Ipld};
 use semver::Version;
 use serde::{
     de::{DeserializeOwned, Error as DeError},
@@ -54,7 +54,10 @@ impl<K, V> Hamt<K, V> {
     }
 
     /// Converts a HAMT to an IPLD object.
-    pub async fn to_ipld<RS: ReferenceableStore<Self> + ?Sized>(&self, store: &mut RS) -> Result<Ipld>
+    pub async fn to_ipld<RS: ReferenceableStore<Ref = Cid> + ?Sized>(
+        &self,
+        store: &mut RS,
+    ) -> Result<Ipld>
     where
         K: Serialize,
         V: Serialize,
@@ -73,11 +76,13 @@ where
     K: Serialize,
     V: Serialize,
 {
-    async fn async_serialize<S: Serializer, RS: ReferenceableStore<Self> + ?Sized>(
-        &self,
-        serializer: S,
-        store: &mut RS,
-    ) -> Result<S::Ok, S::Error> {
+    type StoreRef = Cid;
+
+    async fn async_serialize<S, RS>(&self, serializer: S, store: &mut RS) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+        RS: ReferenceableStore<Ref = Self::StoreRef> + ?Sized,
+    {
         self.to_ipld(store)
             .await
             .map_err(SerError::custom)?

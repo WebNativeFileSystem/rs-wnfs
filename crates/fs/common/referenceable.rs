@@ -9,6 +9,12 @@ use crate::AsyncSerialize;
 // Type Definitions
 //--------------------------------------------------------------------------------------------------
 
+/// This is an abstract data structure that can be used to cache reference to some data and vice versa.
+/// Basically it is allows some "reference" of type `R` to some addressable value of `T`.
+///
+/// It supports representing the data as its reference or the value itself.
+///
+/// This data structure is backed by a [ReferenceableStore](crate::ReferenceableStore) which is used to resolve the reference to the actual value.
 #[derive(Debug)]
 pub enum Referenceable<R, V> {
     /// A variant of `Resolvable` that starts out as a value of R.
@@ -25,17 +31,18 @@ pub enum Referenceable<R, V> {
     },
 }
 
+/// This represents a store that can keep values serializable values and return some reference (of type `Ref`) to them.
+///
+/// References can be used to fetch the corresponding value from the store.
 #[async_trait(?Send)]
-pub trait ReferenceableStore<V: ?Sized> {
-    type Reference;
+pub trait ReferenceableStore {
+    type Ref;
 
-    async fn get_value(&self, reference: &Self::Reference) -> Result<V>
-    where
-        V: DeserializeOwned;
-
-    async fn put_value(&mut self, value: &V) -> Result<Self::Reference>
-    where
-        V: AsyncSerialize;
+    async fn get_value<V: DeserializeOwned>(&self, reference: &Self::Ref) -> Result<V>;
+    async fn put_value<V: AsyncSerialize<StoreRef = Self::Ref>>(
+        &mut self,
+        value: &V,
+    ) -> Result<Self::Ref>;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -52,10 +59,7 @@ impl<R, V> Referenceable<R, V> {
     }
 
     /// Gets an owned value from type. It attempts to it get from the store if it is not present in type.
-    pub async fn get_owned_value<RS: ReferenceableStore<V, Reference = R>>(
-        self,
-        store: &RS,
-    ) -> Result<V>
+    pub async fn get_owned_value<RS: ReferenceableStore<Ref = R>>(self, store: &RS) -> Result<V>
     where
         V: DeserializeOwned,
     {
@@ -81,7 +85,7 @@ impl<R, V> Referenceable<R, V> {
         }
     }
 
-    /// Gets the reference stored in type.
+    /// Gets the reference data stored in type.
     ///
     /// NOTE: This does not attempt to get it from the store if it does not exist.
     pub fn get_reference(&self) -> Option<&R> {
@@ -94,7 +98,7 @@ impl<R, V> Referenceable<R, V> {
     }
 
     /// Gets the value stored in link. It attempts to get it from the store if it is not present in link.
-    pub async fn resolve_value<'a, RS: ReferenceableStore<V, Reference = R>>(
+    pub async fn resolve_value<'a, RS: ReferenceableStore<Ref = R>>(
         &'a self,
         store: &RS,
     ) -> Result<&'a V>
@@ -114,13 +118,13 @@ impl<R, V> Referenceable<R, V> {
         }
     }
 
-    /// Gets the reference stored in type. It attempts to get it from the store if it is not present in type.
-    pub async fn resolve_reference<'a, RS: ReferenceableStore<V, Reference = R> + ?Sized>(
+    /// Gets the reference data stored in type. It attempts to get it from the store if it is not present in type.
+    pub async fn resolve_reference<'a, RS: ReferenceableStore<Ref = R> + ?Sized>(
         &'a self,
         store: &mut RS,
     ) -> Result<&'a R>
     where
-        V: AsyncSerialize,
+        V: AsyncSerialize<StoreRef = R>,
     {
         match self {
             Self::Encoded { reference, .. } => Ok(reference),

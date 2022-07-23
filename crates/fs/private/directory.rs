@@ -14,8 +14,8 @@ use crate::{BlockStore, FsError, HashOutput, Metadata, UnixFsNodeKind};
 #[derive(Debug, Clone)]
 pub struct PrivateRef {
     pub(crate) saturated_name_hash: HashOutput, // Sha3-256 hash of saturated namefilter
-    pub(crate) content_key: Rc<Box<dyn Key>>, // A hash or parent skip ratchet.
-    pub(crate) enc_ratchet_key: Vec<u8>, // Encrypted ratchet key.
+    pub(crate) content_key: Rc<Box<dyn Key>>,   // A hash or parent skip ratchet.
+    pub(crate) enc_ratchet_key: Vec<u8>,        // Encrypted ratchet key.
 }
 
 #[derive(Debug, Clone)]

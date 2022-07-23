@@ -1,7 +1,8 @@
 use anyhow::Result;
 use async_trait::async_trait;
+use serde::de::DeserializeOwned;
 
-use crate::{BlockStore, ReferenceableStore, AsyncSerialize};
+use crate::{AsyncSerialize, BlockStore, ReferenceableStore};
 
 use super::{EncryptedPrivateNode, Hamt, Namefilter, PrivateNode, PrivateRef};
 
@@ -82,14 +83,14 @@ impl<'a, B: BlockStore> HamtStore<'a, B> {
 }
 
 #[async_trait(?Send)]
-impl<B: BlockStore> ReferenceableStore<PrivateNode> for HamtStore<'_, B> {
-    type Reference = Namefilter;
+impl<B: BlockStore> ReferenceableStore for HamtStore<'_, B> {
+    type Ref = Namefilter;
 
-    async fn get_value(&self, reference: &Self::Reference) -> Result<PrivateNode> {
+    async fn get_value<V: DeserializeOwned>(&self, reference: &Self::Ref) -> Result<V> {
         todo!()
     }
 
-    async fn put_value(&mut self, value: &PrivateNode) -> Result<Self::Reference> {
+    async fn put_value<V: AsyncSerialize>(&mut self, value: &V) -> Result<Self::Ref> {
         todo!()
     }
 }

@@ -9,7 +9,7 @@ use crate::{BlockStore, IpldEq};
 // Type Definitions
 //--------------------------------------------------------------------------------------------------
 
-/// A data structure that represents a link in the IPLD graph. Basically it is "link" to some content addressable value of `T`.
+/// A data structure that represents a link in the IPLD graph. Basically it is a "link" to some content addressable value of `T`.
 ///
 /// It supports representing the "link" with a Cid or the deserialized value itself.
 ///
@@ -27,14 +27,14 @@ impl<T> Link<T> {
         Self::from_reference(cid)
     }
 
-    /// Gets the reference stored in type. It attempts to get it from the store if it is not present in type.
+    /// Gets the Cid stored in type. It attempts to get it from the store if it is not present in type.
     #[inline]
-    pub async fn resolve_cid<'a, RS: ReferenceableStore<T, Reference = Cid> + ?Sized>(
+    pub async fn resolve_cid<'a, RS: ReferenceableStore<Ref = Cid> + ?Sized>(
         &'a self,
         store: &mut RS,
     ) -> Result<&'a Cid>
     where
-        T: AsyncSerialize,
+        T: AsyncSerialize<StoreRef = Cid>,
     {
         self.resolve_reference(store).await
     }
@@ -48,7 +48,7 @@ impl<T> Link<T> {
     /// Compares two links for equality. Attempts to get them from store if they are not already cached.
     pub async fn deep_eq<B: BlockStore>(&self, other: &Link<T>, store: &mut B) -> Result<bool>
     where
-        T: PartialEq + AsyncSerialize,
+        T: PartialEq + AsyncSerialize<StoreRef = Cid>,
     {
         if self == other {
             return Ok(true);
@@ -59,7 +59,7 @@ impl<T> Link<T> {
 }
 
 #[async_trait(?Send)]
-impl<T: PartialEq + AsyncSerialize> IpldEq for Link<T> {
+impl<T: PartialEq + AsyncSerialize<StoreRef = Cid>> IpldEq for Link<T> {
     async fn eq<B: BlockStore>(&self, other: &Link<T>, store: &mut B) -> Result<bool> {
         if self == other {
             return Ok(true);

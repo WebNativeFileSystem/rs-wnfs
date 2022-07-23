@@ -37,7 +37,10 @@ pub trait BlockStore {
         self.put_block(bytes, IpldCodec::DagCbor).await
     }
 
-    async fn put_async_serializable<V: AsyncSerialize>(&mut self, value: &V) -> Result<Cid> {
+    async fn put_async_serializable<V: AsyncSerialize<StoreRef = Cid>>(
+        &mut self,
+        value: &V,
+    ) -> Result<Cid> {
         let ipld = value.async_serialize_ipld(self).await?;
 
         let mut bytes = Vec::new();
@@ -94,20 +97,17 @@ impl BlockStore for MemoryBlockStore {
 }
 
 #[async_trait(?Send)]
-impl<V, T: BlockStore + ?Sized> ReferenceableStore<V> for T {
-    type Reference = Cid;
+impl<T: BlockStore + ?Sized> ReferenceableStore for T {
+    type Ref = Cid;
 
-    async fn get_value(&self, reference: &Self::Reference) -> Result<V>
-    where
-        V: DeserializeOwned,
-    {
+    async fn get_value<V: DeserializeOwned>(&self, reference: &Self::Ref) -> Result<V> {
         self.get_deserializable(reference).await
     }
 
-    async fn put_value(&mut self, value: &V) -> Result<Self::Reference>
-    where
-        V: AsyncSerialize,
-    {
+    async fn put_value<V: AsyncSerialize<StoreRef = Self::Ref>>(
+        &mut self,
+        value: &V,
+    ) -> Result<Self::Ref> {
         self.put_async_serializable(value).await
     }
 }

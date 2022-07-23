@@ -7,7 +7,7 @@ pub mod dagcbor {
     use libipld::{
         cbor::DagCborCodec,
         codec::{Decode, Encode},
-        serde as ipld_serde, Ipld,
+        serde as ipld_serde, Cid, Ipld,
     };
     use serde::{de::DeserializeOwned, Serialize};
 
@@ -22,7 +22,7 @@ pub mod dagcbor {
     }
 
     /// Encodes an async serializable value into DagCbor bytes.
-    pub async fn async_encode<V: AsyncSerialize, B: BlockStore>(
+    pub async fn async_encode<V: AsyncSerialize<StoreRef = Cid>, B: BlockStore>(
         value: &V,
         store: &mut B,
     ) -> Result<Vec<u8>> {

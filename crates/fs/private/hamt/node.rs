@@ -1,12 +1,14 @@
 use std::{fmt::Debug, marker::PhantomData, rc::Rc};
 
-use crate::{private::HAMT_VALUES_BUCKET_SIZE, AsyncSerialize, BlockStore, Link, ReferenceableStore};
+use crate::{
+    private::HAMT_VALUES_BUCKET_SIZE, AsyncSerialize, BlockStore, Link, ReferenceableStore,
+};
 use anyhow::{bail, Result};
 use async_recursion::async_recursion;
 use async_trait::async_trait;
 use bitvec::array::BitArray;
 
-use libipld::{serde as ipld_serde, Ipld};
+use libipld::{serde as ipld_serde, Cid, Ipld};
 use log::debug;
 use serde::{
     de::{Deserialize, DeserializeOwned},
@@ -288,7 +290,10 @@ impl<K, V, H: Hasher> Node<K, V, H> {
     }
 
     /// Converts a Node to an IPLD object.
-    pub async fn to_ipld<RS: ReferenceableStore<Self> + ?Sized>(&self, store: &mut RS) -> Result<Ipld>
+    pub async fn to_ipld<RS: ReferenceableStore<Ref = Cid> + ?Sized>(
+        &self,
+        store: &mut RS,
+    ) -> Result<Ipld>
     where
         K: Serialize,
         V: Serialize,
@@ -323,11 +328,13 @@ where
     V: Serialize,
     H: Hasher,
 {
-    async fn async_serialize<S: Serializer, RS: ReferenceableStore<Self> + ?Sized>(
-        &self,
-        serializer: S,
-        store: &mut RS,
-    ) -> Result<S::Ok, S::Error> {
+    type StoreRef = Cid;
+
+    async fn async_serialize<S, RS>(&self, serializer: S, store: &mut RS) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+        RS: ReferenceableStore<Ref = Self::StoreRef> + ?Sized,
+    {
         self.to_ipld(store)
             .await
             .map_err(SerError::custom)?
