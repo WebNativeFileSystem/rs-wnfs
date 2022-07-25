@@ -1,15 +1,17 @@
 use anyhow::Result;
 use async_trait::async_trait;
+use libipld::Cid;
 use serde::de::DeserializeOwned;
 
 use crate::{AsyncSerialize, BlockStore, ReferenceableStore};
 
-use super::{EncryptedPrivateNode, Hamt, Namefilter, PrivateNode, PrivateRef};
+use super::{Hamt, Namefilter, PrivateNode, PrivateRef};
 
 //--------------------------------------------------------------------------------------------------
 // Type Definitions
 //--------------------------------------------------------------------------------------------------
 
+pub type EncryptedPrivateNode = (Vec<u8>, Cid); // (enc_header_bytes, main_cid -> enc_main_bytes)
 pub type PrivateRoot = Hamt<Namefilter, EncryptedPrivateNode>;
 
 pub struct HamtStore<'a, B: BlockStore> {
@@ -33,9 +35,6 @@ impl<'a, B: BlockStore> HamtStore<'a, B> {
     /// Sets a new value at the given key.
     #[inline]
     pub async fn set(&mut self, key: &PrivateRef, value: PrivateNode) -> Result<()> {
-        // TODO(appcypher): Fix this.
-        // let value_bytes = value.async_serialize(self.store).await?;
-        // let enc_value = key.content_key.encrypt(value_bytes).await?;
         todo!()
     }
 
@@ -68,7 +67,7 @@ impl<'a, B: BlockStore> HamtStore<'a, B> {
         &'b self,
         key: &Namefilter,
     ) -> Result<Option<&'b EncryptedPrivateNode>> {
-        self.root.root.get(key, self.store).await
+        todo!()
     }
 
     /// Removes the encrypted value at the given key.
@@ -84,7 +83,7 @@ impl<'a, B: BlockStore> HamtStore<'a, B> {
 
 #[async_trait(?Send)]
 impl<B: BlockStore> ReferenceableStore for HamtStore<'_, B> {
-    type Ref = Namefilter;
+    type Ref = PrivateRef;
 
     async fn get_value<V: DeserializeOwned>(&self, reference: &Self::Ref) -> Result<V> {
         todo!()

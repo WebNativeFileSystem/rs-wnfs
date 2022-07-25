@@ -2,32 +2,43 @@ use std::{collections::BTreeMap, rc::Rc};
 
 use anyhow::{bail, Result};
 use async_recursion::async_recursion;
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Deserializer, Serializer};
 
-use super::{HamtStore, INumber, Key, Namefilter, PrivateLink, PrivateNode, PrivateNodeHeader};
-use crate::{BlockStore, FsError, HashOutput, Metadata, UnixFsNodeKind};
+use super::{HamtStore, INumber, Namefilter, PrivateLink, PrivateNode, PrivateNodeHeader, Key};
+use crate::{
+    AsyncSerialize, BlockStore, FsError, HashOutput, Id, Metadata, ReferenceableStore,
+    UnixFsNodeKind,
+};
 
 //--------------------------------------------------------------------------------------------------
 // Type Definitions
 //--------------------------------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
-pub struct PrivateRef {
-    pub(crate) saturated_name_hash: HashOutput, // Sha3-256 hash of saturated namefilter
-    pub(crate) content_key: Rc<Box<dyn Key>>,   // A hash or parent skip ratchet.
-    pub(crate) enc_ratchet_key: Vec<u8>,        // Encrypted ratchet key.
+pub struct RatchetKey {
+    encrypted: Vec<u8>,
+    bare: Option<Key>,
 }
 
 #[derive(Debug, Clone)]
-pub struct PrivateDirectoryMain {
+pub struct PrivateRef {
+    pub(crate) saturated_name_hash: HashOutput, // Sha3-256 hash of saturated namefilter
+    pub(crate) content_key: Key,            // A hash or parent skip ratchet.
+    pub(crate) ratchet_key: RatchetKey,         // Ratchet key.
+}
+
+#[derive(Debug, Clone)]
+pub struct PrivateDirectoryContent {
     pub(crate) metadata: Metadata,
     pub(crate) entries: BTreeMap<String, PrivateLink>,
 }
 
 #[derive(Debug, Clone)]
 pub struct PrivateDirectory {
-    pub(crate) header: PrivateNodeHeader,
-    pub(crate) main: PrivateDirectoryMain,
+    pub(crate) header: Option<PrivateNodeHeader>,
+    pub(crate) content: PrivateDirectoryContent,
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -42,8 +53,12 @@ impl PrivateDirectory {
         time: DateTime<Utc>,
     ) -> Self {
         Self {
-            header: PrivateNodeHeader::new(parent_bare_name, inumber, ratchet_seed),
-            main: PrivateDirectoryMain {
+            header: Some(PrivateNodeHeader::new(
+                parent_bare_name,
+                inumber,
+                ratchet_seed,
+            )),
+            content: PrivateDirectoryContent {
                 metadata: Metadata::new(time, UnixFsNodeKind::Dir),
                 entries: BTreeMap::new(),
             },
@@ -78,11 +93,16 @@ impl PrivateDirectory {
         path_segment: &str,
         hamt: &HamtStore<'a, B>,
     ) -> Result<Option<PrivateNode>> {
-        // Ok(match self.main.entries.get(path_segment) {
-        //     Some(link) => Some(link.resolve_value(hamt).await?.clone()),
-        //     None => None,
-        // })
-        todo!()
+        Ok(match self.content.entries.get(path_segment) {
+            Some(link) => Some(link.resolve_value(hamt).await?.clone()),
+            None => None,
+        })
+    }
+}
+
+impl Id for PrivateDirectory {
+    fn get_id(&self) -> String {
+        format!("{:p}", &self.header)
     }
 }
 

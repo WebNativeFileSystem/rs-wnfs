@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::{HashOutput, Metadata, UnixFsNodeKind};
+use crate::{HashOutput, Id, Metadata, UnixFsNodeKind};
 
 use super::{INumber, Namefilter, PrivateNodeHeader};
 
@@ -10,15 +10,15 @@ use super::{INumber, Namefilter, PrivateNodeHeader};
 //--------------------------------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PrivateFileMain {
+pub struct PrivateFileContent {
     metadata: Metadata,
     content: Vec<u8>, // Inlined file content. // TODO(appcypher): Support linked file content.
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct PrivateFile {
-    header: PrivateNodeHeader,
-    main: PrivateFileMain,
+    header: Option<PrivateNodeHeader>,
+    content: PrivateFileContent,
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -34,12 +34,22 @@ impl PrivateFile {
         content: Vec<u8>,
     ) -> Self {
         Self {
-            header: PrivateNodeHeader::new(parent_bare_name, inumber, ratchet_seed),
-            main: PrivateFileMain {
-                metadata: Metadata::new(time, UnixFsNodeKind::Dir),
+            header: Some(PrivateNodeHeader::new(
+                parent_bare_name,
+                inumber,
+                ratchet_seed,
+            )),
+            content: PrivateFileContent {
+                metadata: Metadata::new(time, UnixFsNodeKind::File),
                 content,
             },
         }
+    }
+}
+
+impl Id for PrivateFile {
+    fn get_id(&self) -> String {
+        format!("{:p}", &self.header)
     }
 }
 

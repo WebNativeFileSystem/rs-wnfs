@@ -1,20 +1,19 @@
+use std::rc::Rc;
+
 use async_trait::async_trait;
-use libipld::Cid;
-use serde::{Deserialize, Serialize, Serializer};
+use libipld::{Cid, Ipld};
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use skip_ratchet::Ratchet;
 
-use crate::{AsyncSerialize, BlockStore, HashOutput};
+use crate::{AsyncSerialize, HashOutput, Id, Metadata, ReferenceableStore};
 
-use super::{Namefilter, PrivateDirectory, PrivateFile};
+use super::{Namefilter, PrivateDirectory, PrivateFile, PrivateRef};
 
 //--------------------------------------------------------------------------------------------------
 // Type Definitions
 //--------------------------------------------------------------------------------------------------
 
 pub type INumber = Vec<u8>;
-
-pub type EncryptedPrivateNodeHeader = Vec<u8>;
-pub type EncryptedPrivateNode = (EncryptedPrivateNodeHeader, Vec<Cid>); // (header, [main])
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PrivateNodeHeader {
@@ -25,8 +24,8 @@ pub struct PrivateNodeHeader {
 
 #[derive(Debug, Clone)]
 pub enum PrivateNode {
-    Dir(PrivateDirectory),
-    File(PrivateFile),
+    File(Rc<PrivateFile>),
+    Dir(Rc<PrivateDirectory>),
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -52,20 +51,54 @@ impl PrivateNodeHeader {
     }
 }
 
-// /// Implements async deserialization for serde serializable types.
-// #[async_trait(?Send)]
-// impl AsyncSerialize for PrivateNode {
-//     async fn async_serialize<S: Serializer, B: BlockStore + ?Sized>(
-//         &self,
-//         serializer: S,
-//         store: &mut B,
-//     ) -> Result<S::Ok, S::Error> {
-//         match self {
-//             Self::File(file) => todo!(), // file.serialize(serializer),
-//             Self::Dir(dir) => todo!(), // dir.async_serialize(serializer, store).await,
-//         }
-//     }
-// }
+impl Id for PrivateNode {
+    fn get_id(&self) -> String {
+        match self {
+            PrivateNode::File(file) => file.get_id(),
+            PrivateNode::Dir(dir) => dir.get_id(),
+        }
+    }
+}
+
+// TODO(appcypher): Figure how to get rid of the unnecessary contraint.
+#[async_trait(?Send)]
+impl AsyncSerialize for PrivateNode {
+    type StoreRef = PrivateRef;
+
+    async fn async_serialize<S, RS>(
+        &self,
+        _serializer: S,
+        _store: &mut RS,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+        RS: ReferenceableStore<Ref = Self::StoreRef> + ?Sized,
+    {
+        unimplemented!()
+    }
+}
+
+// TODO(appcypher): Figure how to get rid of the unnecessary contraint.
+impl<'de> Deserialize<'de> for PrivateNode {
+    fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        unimplemented!()
+    }
+}
+
+impl From<PrivateFile> for PrivateNode {
+    fn from(file: PrivateFile) -> Self {
+        Self::File(Rc::new(file))
+    }
+}
+
+impl From<PrivateDirectory> for PrivateNode {
+    fn from(dir: PrivateDirectory) -> Self {
+        Self::Dir(Rc::new(dir))
+    }
+}
 
 //--------------------------------------------------------------------------------------------------
 // Tests
