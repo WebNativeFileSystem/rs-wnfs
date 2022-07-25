@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, rc::Rc, str::FromStr};
 
 use anyhow::Result;
 use async_trait::async_trait;
-use libipld::{serde as ipld_serde, Ipld};
+use libipld::{serde as ipld_serde, Cid, Ipld};
 use semver::Version;
 use serde::{
     de::{DeserializeOwned, Error as DeError},
@@ -10,7 +10,7 @@ use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
 };
 
-use crate::{AsyncSerialize, BlockStore};
+use crate::{AsyncSerialize, ReferenceableStore};
 
 use super::{Node, HAMT_VERSION};
 
@@ -20,9 +20,9 @@ use super::{Node, HAMT_VERSION};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Hamt<K, V> {
-    root: Rc<Node<K, V>>,
-    version: Version,
-    structure: Structure,
+    pub root: Rc<Node<K, V>>,
+    pub version: Version,
+    pub structure: Structure,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -35,6 +35,15 @@ pub enum Structure {
 //--------------------------------------------------------------------------------------------------
 
 impl<K, V> Hamt<K, V> {
+    /// Creates a new empty Hamt.
+    pub fn new() -> Self {
+        Self {
+            root: Rc::new(Node::default()),
+            version: HAMT_VERSION,
+            structure: Structure::HAMT,
+        }
+    }
+
     /// Creates a new `Hamt` with the given root node.
     pub fn with_root(root: Rc<Node<K, V>>) -> Self {
         Self {
@@ -45,7 +54,10 @@ impl<K, V> Hamt<K, V> {
     }
 
     /// Converts a HAMT to an IPLD object.
-    pub async fn to_ipld<B: BlockStore + ?Sized>(&self, store: &mut B) -> Result<Ipld>
+    pub async fn to_ipld<RS: ReferenceableStore<Ref = Cid> + ?Sized>(
+        &self,
+        store: &mut RS,
+    ) -> Result<Ipld>
     where
         K: Serialize,
         V: Serialize,
@@ -64,11 +76,13 @@ where
     K: Serialize,
     V: Serialize,
 {
-    async fn async_serialize<S: Serializer, B: BlockStore + ?Sized>(
-        &self,
-        serializer: S,
-        store: &mut B,
-    ) -> Result<S::Ok, S::Error> {
+    type StoreRef = Cid;
+
+    async fn async_serialize<S, RS>(&self, serializer: S, store: &mut RS) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+        RS: ReferenceableStore<Ref = Self::StoreRef> + ?Sized,
+    {
         self.to_ipld(store)
             .await
             .map_err(SerError::custom)?
@@ -144,6 +158,12 @@ impl TryFrom<&str> for Structure {
             "hamt" => Structure::HAMT,
             _ => return Err(format!("Unknown Structure: {}", name)),
         })
+    }
+}
+
+impl<K, V> Default for Hamt<K, V> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

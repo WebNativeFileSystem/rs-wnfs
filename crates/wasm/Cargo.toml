@@ -1,6 +1,6 @@
 [package]
 name = "wasm-wnfs"
-version = "0.1.6"
+version = "0.1.7-alpha.0"
 description = "WebNative Filesystem API (WebAssembly)"
 keywords = ["wnfs", "webnative", "ipfs", "decentralisation"]
 categories = [
@@ -17,7 +17,7 @@ homepage = "https://fission.codes"
 authors = ["The Fission Authors"]
 
 [dependencies]
-wnfs = { path = "../fs", version = "0.1.0" }
+wnfs = { path = "../fs", version = "0.1.7-alpha.0" }
 wasm-bindgen = { version = "0.2", optional = true, features = ["serde-serialize"] }
 wasm-bindgen-futures = { version = "0.4", optional = true }
 js-sys = { version = "0.3", optional = true }

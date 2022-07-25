@@ -1,6 +1,6 @@
 [package]
 name = "wnfs"
-version = "0.1.6"
+version = "0.1.7-alpha.0"
 description = "WebNative filesystem core implementation"
 keywords = ["wnfs", "webnative", "ipfs", "decentralisation"]
 categories = [
@@ -17,7 +17,7 @@ homepage = "https://fission.codes"
 authors = ["The Fission Authors"]
 
 [dependencies]
-libipld = { version = "0.13.1", features = ["dag-cbor", "derive", "serde-codec" ] }
+libipld = { version = "0.13.1", features = ["dag-cbor", "derive", "serde-codec"] }
 serde_repr = "0.1"
 serde = { version = "1.0.137", features = ["rc"]}
 multihash = "0.16.2"
@@ -31,14 +31,15 @@ async-recursion = "1.0.0"
 futures = "0.3.21"
 async-stream = "0.3.3"
 futures-util = "0.3.21"
-skip_ratchet = { git = "https://github.com/appcypher/rs-skip-ratchet", branch = "appcypher/doc-and-structure" }
-bitvec = "1.0.0"
+skip_ratchet = { git = "https://github.com/WebNativeFileSystem/rs-skip-ratchet", rev = "d14863f8d26497a167bef8ad13ac0dde366bdce9", version = "0.1.0", features = ["serde"] }
+bitvec = { version = "1.0.0", features = ["serde"] }
 async-once-cell = "0.4.0"
 sha3 = "0.10.0"
 log = "0.4.17"
 xxhash-rust = { version = "0.8.5", features = ["xxh3"] }
 lazy_static = "1.4.0"
 thiserror = "1.0.31"
+aes-gcm = "0.9.4"
 
 [dev-dependencies]
 env_logger = "0.9.0"

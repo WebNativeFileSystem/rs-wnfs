@@ -1,12 +1,14 @@
 use std::{fmt::Debug, marker::PhantomData, rc::Rc};
 
-use crate::{private::HAMT_VALUES_BUCKET_SIZE, AsyncSerialize, BlockStore, Link};
+use crate::{
+    private::HAMT_VALUES_BUCKET_SIZE, AsyncSerialize, BlockStore, Link, ReferenceableStore,
+};
 use anyhow::{bail, Result};
 use async_recursion::async_recursion;
 use async_trait::async_trait;
 use bitvec::array::BitArray;
 
-use libipld::{serde as ipld_serde, Ipld};
+use libipld::{serde as ipld_serde, Cid, Ipld};
 use log::debug;
 use serde::{
     de::{Deserialize, DeserializeOwned},
@@ -49,7 +51,7 @@ where
 {
     /// Sets a new value at the given key.
     pub async fn set<B: BlockStore>(
-        self: Rc<Self>,
+        self: &Rc<Self>,
         key: K,
         value: V,
         store: &mut B,
@@ -76,7 +78,7 @@ where
 
     /// Removes the value at the given key.
     pub async fn remove<'a, B: BlockStore>(
-        self: Rc<Self>,
+        self: &Rc<Self>,
         key: &K,
         store: &B,
     ) -> Result<(Rc<Self>, Option<V>)> {
@@ -107,7 +109,7 @@ where
     }
 
     #[async_recursion(?Send)]
-    pub(super) async fn modify_value<'a, 'b, B: BlockStore>(
+    pub async fn modify_value<'a, 'b, B: BlockStore>(
         self: &'a Rc<Self>,
         hashnibbles: &'b mut HashNibbles,
         key: K,
@@ -185,7 +187,7 @@ where
     }
 
     #[async_recursion(?Send)]
-    pub(super) async fn get_value<'a, 'b, B: BlockStore>(
+    pub async fn get_value<'a, 'b, B: BlockStore>(
         self: &'a Rc<Self>,
         hashnibbles: &'b mut HashNibbles,
         key: &K,
@@ -209,7 +211,7 @@ where
     }
 
     #[async_recursion(?Send)]
-    pub(super) async fn remove_value<'a, 'b, B: BlockStore>(
+    pub async fn remove_value<'a, 'b, B: BlockStore>(
         self: &'a Rc<Self>,
         hashnibbles: &'b mut HashNibbles,
         key: &K,
@@ -288,7 +290,10 @@ impl<K, V, H: Hasher> Node<K, V, H> {
     }
 
     /// Converts a Node to an IPLD object.
-    pub async fn to_ipld<B: BlockStore + ?Sized>(&self, store: &mut B) -> Result<Ipld>
+    pub async fn to_ipld<RS: ReferenceableStore<Ref = Cid> + ?Sized>(
+        &self,
+        store: &mut RS,
+    ) -> Result<Ipld>
     where
         K: Serialize,
         V: Serialize,
@@ -323,11 +328,13 @@ where
     V: Serialize,
     H: Hasher,
 {
-    async fn async_serialize<S: Serializer, B: BlockStore + ?Sized>(
-        &self,
-        serializer: S,
-        store: &mut B,
-    ) -> Result<S::Ok, S::Error> {
+    type StoreRef = Cid;
+
+    async fn async_serialize<S, RS>(&self, serializer: S, store: &mut RS) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+        RS: ReferenceableStore<Ref = Self::StoreRef> + ?Sized,
+    {
         self.to_ipld(store)
             .await
             .map_err(SerError::custom)?
